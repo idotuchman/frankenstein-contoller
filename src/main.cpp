@@ -1,21 +1,42 @@
 #include <Arduino.h>
 #include <ESP8266WiFi.h>
 #include "SoftwareSerial.h"
-#include "DFRobotDFPlayerMini.h"
+#include "DFRobotDFPlayerMini.h"  // see https://wiki.dfrobot.com/DFPlayer_Mini_SKU_DFR0299
 
-// pin assignments
+// hardware settings
 #define SERIAL_RX_PIN D1      // input
 #define SERIAL_TX_PIN D2      // output
 #define RELAY_SPARK_PIN D3    // output
 #define RELAY_STROBE_PIN D4   // output
 #define MAIN_SWITCH_PIN D5    // input
+#define DEBOUNCE_TIME_MS 20   // how long to check for noise on switchs
+
+// scenes
+#define ACT1_SCENE_TIME 6000
+#define ACT2_SCENE_TIME 3000
+#define ACT3_SCENE_TIME 2000
+#define ACT4_SCENE_TIME 3000
+#define ACT5_SCENE_TIME 2000
+#define ACT6_SCENE_TIME 6000
+enum statePerform {
+  ACT1_START,   // main switch pulled, machine charging
+  ACT1_SCENE,
+  ACT2_START,   // monster thrashing (sparks and strobe 3 sec)
+  ACT2_SCENE,
+  ACT3_START,   // quiet for 2 sec
+  ACT3_SCENE,
+  ACT4_START,   // monster thrashing (sparks and strobe 3 sec)
+  ACT4_SCENE,
+  ACT5_START,   // quiet for 2 sec
+  ACT5_SCENE,
+  ACT6_START,   // monster escapes (strobe on)
+  ACT6_SCENE
+};
 
 // sound effects
 #define SOUND_MACHINE_HUM 1
 #define SOUND_CHARGING 2
 #define SOUND_THUD 3
-
-static unsigned long sceneTimer;
 
 // states
 enum stateMachine {
@@ -24,27 +45,12 @@ enum stateMachine {
   PERFORMING
 };
 stateMachine state = STOPPED;
-
-enum statePerform {
-  ACT1_START,   // main switch pulled, machine charging
-  ACT1_SCENE,
-  ACT2_START,   // monster thrashing (pop and strobe 3 sec)
-  ACT2_SCENE,
-  ACT3_START,   // quiet for 2 sec
-  ACT3_SCENE,
-  ACT4_START,   // monster thrashing (pop and strobe 3 sec)
-  ACT4_SCENE,
-  ACT5_START,   // quiet for 2 sec
-  ACT5_SCENE,
-  ACT6_START,   // moster escapes (strobe on)
-  ACT6_SCENE
-};
 statePerform performanceState = ACT1_START;
 
-
+static unsigned long sceneTimer;
 SoftwareSerial mySoftwareSerial(SERIAL_RX_PIN, SERIAL_TX_PIN); // RX, TX
 DFRobotDFPlayerMini myDFPlayer;
-void printDetail(uint8_t type, int value);
+bool switchPosition(int pin, bool state);    // debounce switch
 void performSequence();
 
 void setup() {
@@ -65,7 +71,7 @@ void setup() {
   Serial.println(F("DFRobot DFPlayer Mini Demo"));
   Serial.println(F("Initializing DFPlayer ... (May take 3~5 seconds)"));
 
-  if (!myDFPlayer.begin(mySoftwareSerial)) {  //Use softwareSerial to communicate with mp3.
+  if (!myDFPlayer.begin(mySoftwareSerial)) {  // Use softwareSerial to communicate with mp3.
     Serial.println(F("Unable to begin:"));
     Serial.println(F("1.Please recheck the connection!"));
     Serial.println(F("2.Please insert the SD card!"));
@@ -82,7 +88,7 @@ void loop() {
     case IDLING:
       digitalWrite(RELAY_SPARK_PIN, LOW);   // sparks off
       digitalWrite(RELAY_STROBE_PIN, LOW);  // strobe off
-      if (digitalRead(MAIN_SWITCH_PIN)) {
+      if (switchPosition(MAIN_SWITCH_PIN, HIGH)) {
         state = PERFORMING;
         myDFPlayer.stop();
         performanceState = ACT1_START;
@@ -100,10 +106,6 @@ void loop() {
       state = IDLING;
       break;
   }
-
-  // if (myDFPlayer.available()) {
-  //   printDetail(myDFPlayer.readType(), myDFPlayer.read()); //Print the detail message from DFPlayer to handle different errors and states.
-  // }
 }
 
 void performSequence() {
@@ -114,20 +116,20 @@ void performSequence() {
       // myDFPlayer.play(SOUND_THUD);
       // delay(1500);
       myDFPlayer.play(SOUND_CHARGING);
-      digitalWrite(RELAY_SPARK_PIN, LOW);
-      digitalWrite(RELAY_STROBE_PIN, LOW);
+      digitalWrite(RELAY_SPARK_PIN, LOW);   // sparks off
+      digitalWrite(RELAY_STROBE_PIN, LOW);  // strobe off
       Serial.println(F("Act 1: charging..."));
       performanceState = ACT1_SCENE;
       break;
     case ACT1_SCENE:
-      digitalWrite(RELAY_SPARK_PIN, LOW);
-      digitalWrite(RELAY_STROBE_PIN, LOW);
-      if (millis() - sceneTimer > 6000) {
+      digitalWrite(RELAY_SPARK_PIN, LOW);   // sparks off
+      digitalWrite(RELAY_STROBE_PIN, LOW);  // strobe off
+      if (millis() - sceneTimer > ACT1_SCENE_TIME) {
         myDFPlayer.stop();
         performanceState = ACT2_START;
       }
       break;
-    case ACT2_START:          // monster thrashing (pop and strobe 3 sec)
+    case ACT2_START:          // monster thrashing (sparks and strobe 3 sec)
       sceneTimer = millis();  // start scene timer
       digitalWrite(RELAY_SPARK_PIN, HIGH);
       digitalWrite(RELAY_STROBE_PIN, HIGH);
@@ -135,57 +137,57 @@ void performSequence() {
       performanceState = ACT2_SCENE;
       break;
     case ACT2_SCENE:
-      digitalWrite(RELAY_SPARK_PIN, HIGH);
+      digitalWrite(RELAY_SPARK_PIN, HIGH);   // sparks on
       digitalWrite(RELAY_STROBE_PIN, HIGH);
-      if (millis() - sceneTimer > 3000) {
+      if (millis() - sceneTimer > ACT2_SCENE_TIME) {
         performanceState = ACT3_START;
       }
       break;
     case ACT3_START:          // quiet for 2 sec
       sceneTimer = millis();  // start scene timer
-      digitalWrite(RELAY_SPARK_PIN, LOW);
-      digitalWrite(RELAY_STROBE_PIN, LOW);
+      digitalWrite(RELAY_SPARK_PIN, LOW);   // sparks off
+      digitalWrite(RELAY_STROBE_PIN, LOW);  // strobe off
       Serial.println(F("Act 3: Pause"));
       performanceState = ACT3_SCENE;
       break;
-    case ACT3_SCENE:          
-      digitalWrite(RELAY_SPARK_PIN, LOW);
-      digitalWrite(RELAY_STROBE_PIN, LOW);
-      if (millis() - sceneTimer > 2000) {
+    case ACT3_SCENE:
+      digitalWrite(RELAY_SPARK_PIN, LOW);   // sparks off
+      digitalWrite(RELAY_STROBE_PIN, LOW);  // strobe off
+      if (millis() - sceneTimer > ACT3_SCENE_TIME) {
         performanceState = ACT4_START;
       }
       break;
-    case ACT4_START:          // monster thrashing (pop and strobe 3 sec)
+    case ACT4_START:          // monster thrashing (sparks and strobe 3 sec)
       sceneTimer = millis();  // start scene timer
-      digitalWrite(RELAY_SPARK_PIN, HIGH);
+      digitalWrite(RELAY_SPARK_PIN, HIGH);   // sparks on
       digitalWrite(RELAY_STROBE_PIN, HIGH);
       Serial.println(F("Act 4: Spark and strobe"));
       performanceState = ACT4_SCENE;
       break;
     case ACT4_SCENE:          
-      digitalWrite(RELAY_SPARK_PIN, HIGH);
+      digitalWrite(RELAY_SPARK_PIN, HIGH);   // sparks on
       digitalWrite(RELAY_STROBE_PIN, HIGH);
-      if (millis() - sceneTimer > 3000) {
+      if (millis() - sceneTimer > ACT4_SCENE_TIME) {
         performanceState = ACT5_START;
       }
       break;
     case ACT5_START:          // quiet for 2 sec
       sceneTimer = millis();  // start scene timer
-      digitalWrite(RELAY_SPARK_PIN, LOW);
-      digitalWrite(RELAY_STROBE_PIN, LOW);
+      digitalWrite(RELAY_SPARK_PIN, LOW);   // sparks off
+      digitalWrite(RELAY_STROBE_PIN, LOW);  // strobe off
       Serial.println(F("Act 5: Pause"));
       performanceState = ACT5_SCENE;
       break;
     case ACT5_SCENE:
-      digitalWrite(RELAY_SPARK_PIN, LOW);
-      digitalWrite(RELAY_STROBE_PIN, LOW);
-      if (millis() - sceneTimer > 2000) {
+      digitalWrite(RELAY_SPARK_PIN, LOW);   // sparks off
+      digitalWrite(RELAY_STROBE_PIN, LOW);  // strobe off
+      if (millis() - sceneTimer > ACT5_SCENE_TIME) {
         performanceState = ACT6_START;
       }
       break;
-    case ACT6_START:          // moster escapes (strobe on)
+    case ACT6_START:          // monster escapes (strobe on)
       sceneTimer = millis();  // start scene timer
-      digitalWrite(RELAY_SPARK_PIN, LOW);
+      digitalWrite(RELAY_SPARK_PIN, LOW);   // sparks off
       digitalWrite(RELAY_STROBE_PIN, HIGH);
       Serial.println(F("Act 6: Strobe on, waiting for switch off"));
       performanceState = ACT6_SCENE;
@@ -193,70 +195,26 @@ void performSequence() {
     case ACT6_SCENE:
       digitalWrite(RELAY_SPARK_PIN, LOW);
       digitalWrite(RELAY_STROBE_PIN, HIGH);
-      if (millis() - sceneTimer > 6000) {
-        if(digitalRead(MAIN_SWITCH_PIN) == LOW) {
-          delay(500);
-          if(digitalRead(MAIN_SWITCH_PIN)==LOW) {            
-            digitalWrite(RELAY_STROBE_PIN, LOW);
-            state = STOPPED;
-          }
+      if (millis() - sceneTimer > ACT6_SCENE_TIME) {
+        if(switchPosition(MAIN_SWITCH_PIN, LOW)) {
+          digitalWrite(RELAY_STROBE_PIN, LOW);  // strobe off
+          state = STOPPED;
         }
       }
       break;
   }
 }
 
-void printDetail(uint8_t type, int value){
-  switch (type) {
-    case TimeOut:
-      Serial.println(F("Time Out!"));
-      break;
-    case WrongStack:
-      Serial.println(F("Stack Wrong!"));
-      break;
-    case DFPlayerCardInserted:
-      Serial.println(F("Card Inserted!"));
-      break;
-    case DFPlayerCardRemoved:
-      Serial.println(F("Card Removed!"));
-      break;
-    case DFPlayerCardOnline:
-      Serial.println(F("Card Online!"));
-      break;
-    case DFPlayerPlayFinished:
-      Serial.print(F("Number:"));
-      Serial.print(value);
-      Serial.println(F(" Play Finished!"));
-      break;
-    case DFPlayerError:
-      Serial.print(F("DFPlayerError:"));
-      switch (value) {
-        case Busy:
-          Serial.println(F("Card not found"));
-          break;
-        case Sleeping:
-          Serial.println(F("Sleeping"));
-          break;
-        case SerialWrongStack:
-          Serial.println(F("Get Wrong Stack"));
-          break;
-        case CheckSumNotMatch:
-          Serial.println(F("Check Sum Not Match"));
-          break;
-        case FileIndexOut:
-          Serial.println(F("File Index Out of Bound"));
-          break;
-        case FileMismatch:
-          Serial.println(F("Cannot Find File"));
-          break;
-        case Advertise:
-          Serial.println(F("In Advertise"));
-          break;
-        default:
-          break;
-      }
-      break;
-    default:
-      break;
+// checks if switch is at correct state during debounce period of time
+bool switchPosition(int pin, bool state) {
+  bool debounceState = true;
+  unsigned long debounceTimer = millis();
+
+  // keep checking that switch is at correct state
+  while(millis() - debounceTimer < DEBOUNCE_TIME_MS) {
+    if (digitalRead(pin) != state) {
+      debounceState = false;
+    }
   }
+  return debounceState;
 }

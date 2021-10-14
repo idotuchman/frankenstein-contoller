@@ -13,9 +13,9 @@ File names:
 Sequence:
 
 1. sound of thud and charging 5s
-2. pop and strobe 2s (monster trashing)
+2. pop and strobe 2s (monster thrashing)
 3. pause 2s
-4. pop and strobe 2s (monster trashing)
+4. pop and strobe 2s (monster thrashing)
 5. pause 2s
 6. strobe, sound of screaming 6s (monster charging)
 
