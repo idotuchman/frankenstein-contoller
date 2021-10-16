@@ -3,7 +3,9 @@ https://wiki.dfrobot.com/DFPlayer_Mini_SKU_DFR0299
 
 MP3 converter
 https://onlymp3.net/
+
 https://audiotrimmer.com/
+https://mp3cut.net/
 
 File names:
 0001.mp3
