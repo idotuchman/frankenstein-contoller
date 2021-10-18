@@ -12,21 +12,21 @@
 #define DEBOUNCE_TIME_MS 20   // how long to check for noise on switchs
 
 // scenes
-#define ACT1_SCENE_TIME 2000
-#define ACT2_SCENE_TIME 3000
-#define ACT3_SCENE_TIME 4000
-#define ACT4_SCENE_TIME 3000
+#define ACT1_SCENE_TIME 3000
+#define ACT2_SCENE_TIME 2500
+#define ACT3_SCENE_TIME 500
+#define ACT4_SCENE_TIME 4000
 #define ACT5_SCENE_TIME 2000
 #define ACT6_SCENE_TIME 6000
 enum statePerform {
   ACT1_START,   // main switch pulled (machine charging sound 2 sec)
   ACT1_SCENE,
-  ACT2_START,   // monster thrashing (sparks and strobe 3 sec)
+  ACT2_START,   // monster thrashing (sparks and strobe 2.5 sec)
   ACT2_SCENE,
-  ACT3_START,   // monster escapes (strobe on, roar sound 4 sec)
+  ACT3_START,   // monster roar sound starts (.5 sec)
   ACT3_SCENE,
-  // ACT4_START,   // monster thrashing (sparks and strobe 3 sec)
-  // ACT4_SCENE,
+  ACT4_START,   // monster escapes (strobe on, roar sound 4 sec)
+  ACT4_SCENE,
   // ACT5_START,   // quiet for 2 sec
   // ACT5_SCENE,
   // ACT6_START,   // monster escapes (strobe on)
@@ -37,6 +37,7 @@ enum statePerform {
 #define SOUND_MACHINE_HUM 1
 #define SOUND_CHARGING 2
 #define SOUND_MONSTER_ROAR 3
+#define SOUND_SLAM 4
 
 // states
 enum stateMachine {
@@ -74,7 +75,7 @@ void setup() {
     while(true);
   }
 
-  myDFPlayer.volume(3);  //Set volume value. From 0 to 30
+  myDFPlayer.volume(3);  // set volume value. From 0 to 30
 }
 
 void loop() {
@@ -85,7 +86,7 @@ void loop() {
       digitalWrite(RELAY_STROBE_PIN, LOW);  // strobe off
       if (switchPosition(MAIN_SWITCH_PIN, HIGH)) {
         state = PERFORMING;
-        myDFPlayer.stop();
+        // myDFPlayer.stop();
         performanceState = ACT1_START;
       }
       break;
@@ -95,8 +96,8 @@ void loop() {
     case STOPPED:
       digitalWrite(RELAY_SPARK_PIN, LOW);   // sparks off
       digitalWrite(RELAY_STROBE_PIN, LOW);  // strobe off
-      myDFPlayer.stop();
-      myDFPlayer.volume(3);  //Set volume value. From 0 to 30
+      // myDFPlayer.stop();
+      myDFPlayer.volume(3);  // set volume value. From 0 to 30
       myDFPlayer.loop(SOUND_MACHINE_HUM);
       state = IDLING;
       break;
@@ -111,14 +112,12 @@ void performSequence() {
       myDFPlayer.play(SOUND_CHARGING);
       digitalWrite(RELAY_SPARK_PIN, LOW);   // sparks off
       digitalWrite(RELAY_STROBE_PIN, LOW);  // strobe off
-      Serial.println(F("Act 1: charging..."));
       performanceState = ACT1_SCENE;
       break;
     case ACT1_SCENE:
       digitalWrite(RELAY_SPARK_PIN, LOW);   // sparks off
       digitalWrite(RELAY_STROBE_PIN, LOW);  // strobe off
       if (millis() - sceneTimer > ACT1_SCENE_TIME) {
-        myDFPlayer.stop();
         performanceState = ACT2_START;
       }
       break;
@@ -126,29 +125,38 @@ void performSequence() {
       sceneTimer = millis();  // start scene timer
       digitalWrite(RELAY_SPARK_PIN, HIGH);
       digitalWrite(RELAY_STROBE_PIN, HIGH);
-      Serial.println(F("Act 2: Spark and strobe"));
       performanceState = ACT2_SCENE;
       break;
     case ACT2_SCENE:
       digitalWrite(RELAY_SPARK_PIN, HIGH);   // sparks on
-      digitalWrite(RELAY_STROBE_PIN, HIGH);
+      digitalWrite(RELAY_STROBE_PIN, HIGH);  // strobe on
       if (millis() - sceneTimer > ACT2_SCENE_TIME) {
         performanceState = ACT3_START;
       }
       break;
-    case ACT3_START:          // monster escapes (strobe on)
+    case ACT3_START:          // monster continues to thrash, start roar sound early b/c sound delay (.5 sec)
       sceneTimer = millis();  // start scene timer
+      digitalWrite(RELAY_SPARK_PIN, HIGH);
+      digitalWrite(RELAY_STROBE_PIN, HIGH);
       myDFPlayer.volume(28);  // set volume value. From 0 to 30
       myDFPlayer.play(SOUND_MONSTER_ROAR);
-      digitalWrite(RELAY_SPARK_PIN, LOW);   // sparks off
-      digitalWrite(RELAY_STROBE_PIN, HIGH);
-      Serial.println(F("Act 3: monster escapes, waiting for switch off"));
       performanceState = ACT3_SCENE;
       break;
     case ACT3_SCENE:
+      if (millis() - sceneTimer > ACT3_SCENE_TIME) {
+        performanceState = ACT4_START;
+      }
+      break;
+    case ACT4_START:          // monster escapes (strobe on, 4 sec)
+      sceneTimer = millis();  // start scene timer
+      digitalWrite(RELAY_SPARK_PIN, LOW);   // sparks off
+      digitalWrite(RELAY_STROBE_PIN, HIGH); // strobes on
+      performanceState = ACT4_SCENE;
+      break;
+    case ACT4_SCENE:
       digitalWrite(RELAY_SPARK_PIN, LOW);
       digitalWrite(RELAY_STROBE_PIN, HIGH);
-      if (millis() - sceneTimer > ACT3_SCENE_TIME) {
+      if (millis() - sceneTimer > ACT4_SCENE_TIME) {
         if(switchPosition(MAIN_SWITCH_PIN, LOW)) {
           digitalWrite(RELAY_STROBE_PIN, LOW);  // strobe off
           state = STOPPED;
